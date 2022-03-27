@@ -8,6 +8,8 @@ import json
 import logging
 import os
 import subprocess
+import pexpect
+import time
 
 from pkg_resources import parse_version
 
@@ -167,6 +169,23 @@ def ssh_add(session, item_id, key_id):
     logging.debug('Item ID: %s', item_id)
     logging.debug('Key ID: %s', key_id)
 
+    proc_passphrase = subprocess.run([
+        'bw',
+        'get',
+        'item', item_id,
+        '--session', session
+        ],
+        stdout=subprocess.PIPE,
+        universal_newlines=True,
+        check=True,
+    )
+
+    temp_passphrase = json.loads(proc_passphrase.stdout)
+    
+    for field in temp_passphrase['fields']:
+        if field['name'] == 'passphrase':
+            passphrase = field['value']
+
     proc_attachment = subprocess.run([
             'bw',
             'get',
@@ -183,15 +202,22 @@ def ssh_add(session, item_id, key_id):
 
     logging.debug("Running ssh-add")
 
-    # CAVEAT: `ssh-add` provides no useful output, even with maximum verbosity
-    subprocess.run(
-        ['ssh-add', '-'],
-        input=ssh_key,
-        # Works even if ssh-askpass is not installed
-        env=dict(os.environ, SSH_ASKPASS_REQUIRE="never"),
-        universal_newlines=True,
-        check=True,
-    )
+    cmd = 'echo "' + ssh_key + '" | ssh-add - '
+    
+    child = pexpect.spawn('bash', env=dict(os.environ, SSH_ASKPASS_REQUIRE="never"))
+    child.sendline(cmd)
+    index = child.expect(['Enter passphrase for.*', pexpect.TIMEOUT], timeout=2)
+    if index == 0:
+        time.sleep(0.1)
+        child.sendline(passphrase)
+    if index == 1:
+        logging.debug('Timeout, possibly no passphrase needed')
+    time.sleep(2)
+    child.close()
+
+    cmd = None
+    passphrase = None
+
 
 
 if __name__ == '__main__':

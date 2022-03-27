@@ -13,7 +13,7 @@ Fetches SSH keys stored in Bitwarden vault and adds them to `ssh-agent`.
    ./bw_add_sshkeys.py
    ```
 2. Enter your Bitwarden credentials, if a Bitwarden vault session is not already set.
-3. (optional) Enter your SSH keys' passphrases.
+3. ~~(optional) Enter your SSH keys' passphrases.~~
 
 
 ## Storing the keys in BitWarden
@@ -21,8 +21,5 @@ Fetches SSH keys stored in Bitwarden vault and adds them to `ssh-agent`.
 2. Add an new secure note to that folder.
 3. Upload the private key as an attachment.
 4. Add the custom field `private` (can be overridden on the command line), containing the file name of the private key attachment.
-5. Repeat steps 2-4 for each subsequent key
-
-
-## Improvements to be made
-* Find a way to extract the attachment from bitwarden in memory, instead of using a temporary file.
+5. Add the custom field `passphrase`, containing the passphrase of the private key
+6. Repeat steps 2-5 for each subsequent key
