@@ -157,12 +157,13 @@ def add_ssh_keys(session, items, keyname):
         logging.debug('Private key ID found')
 
         try:
-            ssh_add(session, item['id'], private_key_id)
+            logging.debug('trying to add key ' + item['name'])
+            ssh_add(session, item['id'], private_key_id, item['name'])
         except subprocess.SubprocessError:
             logging.warning('Could not add key to the SSH agent')
 
 
-def ssh_add(session, item_id, key_id):
+def ssh_add(session, item_id, key_id, key_name):
     """
     Function to get the key contents from the Bitwarden vault
     """
@@ -202,17 +203,47 @@ def ssh_add(session, item_id, key_id):
 
     logging.debug("Running ssh-add")
 
-    cmd = 'echo "' + ssh_key + '" | ssh-add - '
+    cmd = ' echo "' + ssh_key + ' " | ssh-add -'
+
+    child = pexpect.spawn('sh', env=dict(os.environ, SSH_ASKPASS_REQUIRE="never"), echo=False)
+    child.sendline('stty -icanon') 
+    # https://unix.stackexchange.com/questions/611355/does-zsh-use-canonical-mode-for-the-terminal
+    # https://github.com/pexpect/pexpect/issues/55
+    # https://pexpect.readthedocs.io/en/stable/api/pexpect.html (send, PC_MAX_CANON)
+    # i'm using macOS with zsh as my loginshell, just works 
+
+    time.sleep(0.2)
     
-    child = pexpect.spawn('bash', env=dict(os.environ, SSH_ASKPASS_REQUIRE="never"))
-    child.sendline(cmd)
-    index = child.expect(['Enter passphrase for.*', pexpect.TIMEOUT], timeout=2)
+    cmdlines = cmd.splitlines()
+    for item in cmdlines:
+        child.sendline(item)
+    
+    time.sleep(0.2)
+    index = child.expect(['Enter passphrase for.*', '.*dentity added:.*', pexpect.TIMEOUT, pexpect.EOF], timeout=2)
+
     if index == 0:
-        time.sleep(0.1)
+        logging.debug('Entering passphrase...')
+        child.waitnoecho()
         child.sendline(passphrase)
+        child.waitnoecho()
+
+        passphraseindex = child.expect([pexpect.TIMEOUT, pexpect.EOF, '.*dentity added:.*', '.*ad passphrase, try again for.*'], timeout=2)
+        if passphraseindex == 0:
+            logging.debug('Passphrase timeout')
+        if passphraseindex == 1:
+            logging.debug('EOF?')
+        if passphraseindex == 2:
+            logging.info('Identity ' + key_name + ' added')
+        if passphraseindex == 3:
+            logging.error('Wrong passphrase, skipping...')
+    
     if index == 1:
-        logging.debug('Timeout, possibly no passphrase needed')
-    time.sleep(2)
+       logging.info('Identity ' + key_name + ' added, no passphrase needed')
+    if index == 2:
+        logging.error('Timeout')
+    if index == 3:
+        logging.debug('EOF?')
+
     child.close()
 
     cmd = None
